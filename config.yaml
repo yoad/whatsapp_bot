@@ -1,0 +1,54 @@
+# /addons/whatsapp_bot/config.yaml
+name: "בוט גן ילדים"
+version: "0.0.44"
+slug: "whatsapp_bot"
+description: "Kindergarten task extractor — event-driven via whatsapp_client."
+arch:
+  - armv7
+  - aarch64
+  - amd64
+init: false
+homeassistant_api: true
+ingress: true
+ingress_port: 3000
+panel_icon: "mdi:calendar-check"
+panel_title: "תזכורות גן"
+host_network: true
+options:
+  INCOMING_GROUP_ID: "120363320303283953@g.us"
+  OUTGOING_GROUP_ID: "120363425692029127@g.us"
+  INCOMING_GROUP_ID_2: "120363421340939340@g.us"
+  OUTGOING_GROUP_ID_2: "120363424238663971@g.us"
+  GEMINI_API_KEY: ""
+  GROUP_NAME_1: "גן חובה"
+  GROUP_NAME_2: "גן פלמינגו"
+  CALENDAR_ID_1: "calendar.gn_khvbh_yrv_ym_vmshymvt"
+  CALENDAR_ID_2: "calendar.plmyngv_yrv_ym_vmshymvt"
+  EXTRACT_TASKS: true
+  SEND_REMINDERS: true
+  TEST_GEMINI: false
+  RESET_LAST_PROCESSED: false
+  SEND_SUMMARY_OLD_MESSAGES: true
+  SAFE_MODE: false
+  ADD_FRUITS_REMINDER_FLAMENGO: true
+  REMINDER_MORNING_TIME: "08:00"
+  REMINDER_EVENING_TIME: "20:00"
+schema:
+  INCOMING_GROUP_ID: str
+  OUTGOING_GROUP_ID: str
+  INCOMING_GROUP_ID_2: "str?"
+  OUTGOING_GROUP_ID_2: "str?"
+  GEMINI_API_KEY: str
+  GROUP_NAME_1: str
+  GROUP_NAME_2: "str?"
+  CALENDAR_ID_1: "str?"
+  CALENDAR_ID_2: "str?"
+  EXTRACT_TASKS: bool
+  SEND_REMINDERS: bool
+  TEST_GEMINI: bool
+  RESET_LAST_PROCESSED: bool
+  SEND_SUMMARY_OLD_MESSAGES: bool
+  SAFE_MODE: bool
+  ADD_FRUITS_REMINDER_FLAMENGO: bool
+  REMINDER_MORNING_TIME: "str?"
+  REMINDER_EVENING_TIME: "str?"
