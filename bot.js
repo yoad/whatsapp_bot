@@ -340,7 +340,8 @@ async function extractTasksWithGemini(messagesText, messageTimestamp, existingEv
   דוגמה לא נכונה: "לשלוח אביזרי ליצן עם הילדים עד יום שני 23.2"
 - אם כתוב "אם יש" או "מי שרוצה" - ציין זאת בתיאור המשימה (למשל: "אופציונלי").
 - אם משימה שחולצה כבר מכוסה על ידי אירוע קיים (אותו אירוע/פעולה באותו תאריך ואותם פרטים), סמן אותה עם "duplicate": true.
-- אם משימה שחולצה דומה לאירוע קיים אבל יש שינוי (למשל שעה שונה, תאריך שונה, פרטים מעודכנים) - זהו תיקון. סמן "duplicate": false ושים ב-"replaces" את האינדקס (מספר) של האירוע הקיים שהמשימה מחליפה.
+- אם משימה שחולצה דומה לאירוע קיים אבל יש שינוי (למשל שעה שונה, תאריך שונה, פרטים מעודכנים) - זהו תיקון. סמן "duplicate": false ושים ב-"replaces" את האינדקס (מספר) או מערך של אינדקסים של האירועים הקיימים שהמשימה מחליפה.
+- אם תיקון אחד מחליף כמה אירועים קיימים (למשל: "מפגש מאוחד" מחליף שני מפגשים נפרדים לקבוצה א' וקבוצה ב'), שים את כל האינדקסים של האירועים המוחלפים במערך ב-"replaces". לדוגמה: "replaces": [3, 4].
 
 ${existingEventsText ? `אירועים קיימים שכבר נרשמו לקבוצה זו:\n${existingEventsText}\n\n` : ''}החזר את התשובה בפורמט JSON בלבד, בלי שום טקסט נוסף, בלי markdown, בלי backticks.
 הפורמט:
@@ -354,7 +355,7 @@ ${existingEventsText ? `אירועים קיימים שכבר נרשמו לקבו
       "event_duration_minutes": "מספר דקות או null אם לא ברור. למשל אם כתוב 'בין 10 ל-12' אז 120",
       "source_index": "האינדקס (0-based) של ההודעה המקורית שממנה חולצה המשימה",
       "duplicate": "true אם המשימה זהה לחלוטין לאירוע קיים, אחרת false",
-      "replaces": "האינדקס (מספר) של האירוע הקיים שהמשימה מחליפה (תיקון), או null אם אין תיקון"
+      "replaces": "אינדקס אחד (מספר) או מערך של אינדקסים של אירועים קיימים שהמשימה מחליפה (תיקון), או null אם אין תיקון. דוגמה: 3 או [3, 4]"
     }
   ],
   "summary_text": "סיכום טקסטואלי של המשימות כרשימה ממוספרת, או 'אין משימות חדשות להורים.'"
@@ -1041,8 +1042,14 @@ async function processMessageBatch(groupPair, messages, { skipSend = false } = {
             } else {
                 // Determine header based on task types
                 const tasks = result.tasks || [];
-                const hasCorrections = tasks.some(t => t.replaces != null);
-                const hasNew = tasks.some(t => !t.duplicate && t.replaces == null);
+                // Normalize replaces to always be an array (or null)
+                for (const t of tasks) {
+                    if (t.replaces != null && !Array.isArray(t.replaces)) {
+                        t.replaces = [t.replaces];
+                    }
+                }
+                const hasCorrections = tasks.some(t => Array.isArray(t.replaces) && t.replaces.length > 0);
+                const hasNew = tasks.some(t => !t.duplicate && (!Array.isArray(t.replaces) || t.replaces.length === 0));
                 const allDuplicates = tasks.length > 0 && tasks.every(t => t.duplicate);
                 let header;
                 if (allDuplicates) {
@@ -1070,10 +1077,14 @@ async function processMessageBatch(groupPair, messages, { skipSend = false } = {
                             console.log(`  Task: "${task.description}" due: ${task.due_date} — DUPLICATE, skipping`);
                             continue;
                         }
-                        if (task.replaces != null && existingEvents[task.replaces]) {
-                            const oldEvent = existingEvents[task.replaces];
-                            console.log(`  Task: "${task.description}" due: ${task.due_date} — CORRECTION, replacing event [${task.replaces}]: "${oldEvent.description}"`);
-                            await removeEventAndReminders(oldEvent.id, groupPair.outgoingId);
+                        if (Array.isArray(task.replaces) && task.replaces.length > 0) {
+                            for (const idx of task.replaces) {
+                                if (existingEvents[idx]) {
+                                    const oldEvent = existingEvents[idx];
+                                    console.log(`  Task: "${task.description}" due: ${task.due_date} — CORRECTION, replacing event [${idx}]: "${oldEvent.description}"`);
+                                    await removeEventAndReminders(oldEvent.id, groupPair.outgoingId);
+                                }
+                            }
                         } else {
                             console.log(`  Task: "${task.description}" due: ${task.due_date}`);
                         }
