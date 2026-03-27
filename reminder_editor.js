@@ -41,9 +41,10 @@ function sendJSON(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
-function buildHtmlPage(reminderTimes) {
+function buildHtmlPage(reminderTimes, groupNames) {
   const morningTime = reminderTimes?.morning || '08:00';
   const eveningTime = reminderTimes?.evening || '20:00';
+  const columnsHtml = Object.keys(groupNames || {}).map(id => `<div class="column" id="col-${id}"></div>`).join('\n    ');
   return `<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -237,6 +238,13 @@ header .stats { font-size: 0.9rem; color: var(--text2); }
   </div>
 
   <div class="activity-section">
+    <div class="activity-header" onclick="toggleRecentMessages()">
+      <h2><span class="arrow open" id="recent-arrow">▶</span> 📥 הודעות נכנסות אחרונות</h2>
+    </div>
+    <div class="activity-body open" id="recent-body"></div>
+  </div>
+
+  <div class="activity-section">
     <div class="activity-header" onclick="toggleActivity()">
       <h2><span class="arrow" id="activity-arrow">▶</span> 📊 פעילות אחרונה <span class="live-dot"></span></h2>
       <span class="count" id="activity-count"></span>
@@ -245,8 +253,7 @@ header .stats { font-size: 0.9rem; color: var(--text2); }
   </div>
 
   <div class="columns" id="reminders-list">
-    <div class="column" id="col-120363425692029127@g.us"></div>
-    <div class="column" id="col-120363424238663971@g.us"></div>
+    ${columnsHtml}
   </div>
 </div>
 
@@ -905,12 +912,52 @@ function toggleDetails(btn) {
     }
 }
 
+let recentMessagesData = [];
+let recentOpen = true;
+
+function toggleRecentMessages() {
+    recentOpen = !recentOpen;
+    document.getElementById('recent-body').classList.toggle('open', recentOpen);
+    document.getElementById('recent-arrow').classList.toggle('open', recentOpen);
+    if (recentOpen) fetchRecentMessages();
+}
+
+async function fetchRecentMessages() {
+    try {
+        const res = await fetch('api/recent-messages');
+        recentMessagesData = await res.json();
+        if (recentOpen) renderRecentMessages();
+    } catch (err) {
+        console.error('Failed to fetch recent messages:', err);
+    }
+}
+
+function renderRecentMessages() {
+    const body = document.getElementById('recent-body');
+    if (!recentMessagesData || recentMessagesData.length === 0) {
+        body.innerHTML = '<div class="empty-state" style="padding:20px"><p>אין הודעות אחרונות</p></div>';
+        return;
+    }
+    let html = '';
+    recentMessagesData.forEach(msg => {
+         const timeStr = new Date(msg.timestamp * 1000).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+         html += '<div style="padding: 10px; border-bottom: 1px solid var(--border);">';
+         html += '<strong>' + escapeHtml(msg.group) + ' - ' + escapeHtml(msg.sender) + '</strong>';
+         html += '<span style="color: var(--text2); font-size: 0.8rem; margin-right: 10px;">🕒 ' + timeStr + '</span>';
+         html += '<div style="margin-top: 4px; white-space: pre-wrap; font-size: 0.9rem;">' + escapeHtml(msg.body) + '</div>';
+         html += '</div>';
+    });
+    body.innerHTML = html;
+}
+
 // Auto-poll activity log every 5 seconds
 setInterval(() => {
     fetchActivityLog();
+    if (recentOpen) fetchRecentMessages();
 }, 5000);
 // Initial fetch
 fetchActivityLog();
+if (recentOpen) fetchRecentMessages();
 </script>
 </body>
 </html>`;
@@ -1102,10 +1149,21 @@ function startEditor(port = 3000, groupNames = {}, incomingGroupNames = {}, call
         return;
       }
 
+      // API: GET /api/recent-messages
+      if (req.method === 'GET' && url.pathname === '/api/recent-messages') {
+        const { getRecentMessages } = callbacks;
+        if (getRecentMessages) {
+          sendJSON(res, 200, getRecentMessages());
+        } else {
+          sendJSON(res, 200, []);
+        }
+        return;
+      }
+
       // Serve the HTML UI
       if (req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(buildHtmlPage(reminderTimes));
+        res.end(buildHtmlPage(reminderTimes, GROUP_NAMES));
         return;
       }
 

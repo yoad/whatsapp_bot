@@ -1217,6 +1217,7 @@ async function processMessage(groupPair, messageBody, messageTimestamp, sender, 
 // ────────────────────────────────────────────────────────────
 let haWs = null;
 let wsSeqId = 1;
+const recentMessages = [];
 
 function handleIncomingMessage(eventData) {
     const { group_id, body, timestamp, message_id, sender, from_me, has_media } = eventData;
@@ -1240,6 +1241,10 @@ function handleIncomingMessage(eventData) {
     const senderName = sender || (from_me ? 'אני' : 'Unknown');
 
     console.log(`[${groupPair.label}][INCOMING] ${senderName}: ${body}`);
+
+    // Track the last 3 incoming messages
+    recentMessages.unshift({ group: groupPair.label, sender: senderName, body: body, timestamp: timestamp });
+    if (recentMessages.length > 3) recentMessages.pop();
 
     // Add to batch buffer (2-min debounce)
     const msgId = message_id || `${timestamp}-${senderName}`;
@@ -1621,7 +1626,8 @@ async function main() {
                 console.log(`[Sync] Events reloaded from UI: ${registeredEvents.length} events`);
             } catch (e) { console.error('[Sync] Failed to reload events:', e.message); }
         },
-        getActivityLog: () => getActivityLog()
+        getActivityLog: () => getActivityLog(),
+        getRecentMessages: () => recentMessages
     });
     console.log('Reminder editor UI started on port 3000');
 
@@ -1653,6 +1659,12 @@ async function main() {
     console.log(`  Fruits reminders (Flamengo): ${ADD_FRUITS_REMINDER_FLAMENGO}`);
     console.log(`  Pending reminders: ${scheduledReminders.length}`);
     console.log('  Listening for whatsapp_message events via HA WebSocket...');
+
+    // Restart the app every 5 hours to clear connectivity issues
+    setTimeout(() => {
+        console.log('Restarting app after 5 hours to prevent connectivity issues...');
+        process.exit(0);
+    }, 5 * 60 * 60 * 1000);
 }
 
 main();
