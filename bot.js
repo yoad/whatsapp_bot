@@ -1312,6 +1312,11 @@ function connectHAWebSocket() {
                 } else if (msg.event.event_type === 'whatsapp_response') {
                     handleFetchResponse(eventData);
                 } else if (msg.event.event_type === 'whatsapp_status' && eventData.status === 'connected') {
+                    // Only catch up on actual reconnections, not periodic heartbeats
+                    if (eventData.heartbeat) {
+                        // Periodic heartbeat — no need to catch up
+                        return;
+                    }
                     console.log('[WS] WhatsApp client reconnected — catching up on missed messages...');
                     catchUpMissedMessages().catch(err => console.error('[Catchup] Failed:', err.message));
                 }
