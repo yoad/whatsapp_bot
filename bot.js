@@ -24,7 +24,6 @@ try {
     process.exit(1);
 }
 
-const GEMINI_API_KEY = options.GEMINI_API_KEY;
 const EXTRACT_TASKS = options.EXTRACT_TASKS !== undefined ? options.EXTRACT_TASKS : true;
 const SEND_REMINDERS = options.SEND_REMINDERS !== undefined ? options.SEND_REMINDERS : true;
 const TEST_GEMINI = options.TEST_GEMINI !== undefined ? options.TEST_GEMINI : false;
@@ -79,9 +78,8 @@ if (groupPairs.length === 0) {
 }
 
 
-if (!GEMINI_API_KEY) {
-    console.error('FATAL: GEMINI_API_KEY is not set.');
-    process.exit(1);
+if (!SUPERVISOR_TOKEN) {
+    console.error('WARNING: SUPERVISOR_TOKEN not available — Gemini calls via HA will not work.');
 }
 
 // Log configuration
@@ -89,7 +87,7 @@ console.log('--- Group Pairs ---');
 groupPairs.forEach(gp => {
     console.log(`  ${gp.label}: ${gp.incomingId} -> ${gp.outgoingId}`);
 });
-console.log(`GEMINI_API_KEY = "${GEMINI_API_KEY ? '***' + GEMINI_API_KEY.slice(-4) : 'NOT SET'}"`);
+console.log(`Gemini: via HA google_generative_ai_conversation integration`);
 console.log(`EXTRACT_TASKS = ${EXTRACT_TASKS}`);
 console.log(`SEND_REMINDERS = ${SEND_REMINDERS}`);
 console.log(`TEST_GEMINI = ${TEST_GEMINI}`);
@@ -315,9 +313,34 @@ function groupMessagesByTimeGap(messages, gapSeconds) {
     return groups;
 }
 
+// --- GEMINI via HA: call google_generative_ai_conversation.generate_content ---
+async function callGeminiViaHA(prompt) {
+    if (!SUPERVISOR_TOKEN) throw new Error('SUPERVISOR_TOKEN not available — cannot call Gemini via HA');
+
+    const response = await axios.post(
+        'http://supervisor/core/api/services/google_generative_ai_conversation/generate_content?return_response',
+        { prompt },
+        {
+            headers: {
+                'Authorization': `Bearer ${SUPERVISOR_TOKEN}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 120000
+        }
+    );
+
+    const serviceResponse = response.data?.service_response;
+    if (!serviceResponse) throw new Error('No service_response from HA');
+
+    // The key is the integration entity name — grab the first value
+    const result = Object.values(serviceResponse)[0];
+    if (!result?.text) throw new Error('No text in Gemini response');
+
+    return result.text;
+}
+
 // --- GEMINI: Extract tasks with dates ---
 async function extractTasksWithGemini(messagesText, messageTimestamp, existingEventsText) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     // Use the message's sent date for relative date calculations (e.g. "tomorrow", "next Sunday")
     const messageDate = messageTimestamp
         ? new Date(messageTimestamp * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' })
@@ -369,26 +392,14 @@ ${existingEventsText ? `אירועים קיימים שכבר נרשמו לקבו
 הודעה:
 ${messagesText}`;
 
-    const response = await axios.post(url, {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1 }
-    }, {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 60000
-    });
-
-    const candidate = response.data.candidates && response.data.candidates[0];
-    if (candidate && candidate.content && candidate.content.parts) {
-        const text = candidate.content.parts.map(p => p.text).join('');
-        try {
-            const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-            return JSON.parse(cleaned);
-        } catch (e) {
-            console.error('Failed to parse Gemini JSON response:', text);
-            return { has_tasks: true, tasks: [], summary_text: text };
-        }
+    const text = await callGeminiViaHA(prompt);
+    try {
+        const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        return JSON.parse(cleaned);
+    } catch (e) {
+        console.error('Failed to parse Gemini JSON response:', text);
+        return { has_tasks: true, tasks: [], summary_text: text };
     }
-    throw new Error('Unexpected Gemini response format');
 }
 
 

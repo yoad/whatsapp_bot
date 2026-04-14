@@ -19,7 +19,6 @@ options:
   OUTGOING_GROUP_ID: "120363425692029127@g.us"
   INCOMING_GROUP_ID_2: "120363421340939340@g.us"
   OUTGOING_GROUP_ID_2: "120363424238663971@g.us"
-  GEMINI_API_KEY: "AIzaSyCdCnq5nu3jXdoGahBxY5dSCeFYJmlegwo"
   GROUP_NAME_1: "גן חובה"
   GROUP_NAME_2: "גן פלמינגו"
   CALENDAR_ID_1: "calendar.gn_khvbh_yrv_ym_vmshymvt"
@@ -38,7 +37,6 @@ schema:
   OUTGOING_GROUP_ID: str
   INCOMING_GROUP_ID_2: "str?"
   OUTGOING_GROUP_ID_2: "str?"
-  GEMINI_API_KEY: str
   GROUP_NAME_1: str
   GROUP_NAME_2: "str?"
   CALENDAR_ID_1: "str?"

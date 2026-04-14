@@ -7,3 +7,6 @@ node_modules/
 events.json
 session_data/
 auth_info/
+
+# Secrets backup
+../EXTRACTED_SECRETS.txt
