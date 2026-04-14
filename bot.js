@@ -332,9 +332,11 @@ async function callGeminiViaHA(prompt) {
     const serviceResponse = response.data?.service_response;
     if (!serviceResponse) throw new Error('No service_response from HA');
 
-    // The key is the integration entity name — grab the first value
     const result = Object.values(serviceResponse)[0];
-    if (!result?.text) throw new Error('No text in Gemini response');
+    if (!result?.text) {
+        console.error('Gemini response missing text. Full response data:', JSON.stringify(response.data, null, 2));
+        throw new Error('No text in Gemini response');
+    }
 
     return result.text;
 }
