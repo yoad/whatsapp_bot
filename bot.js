@@ -1657,8 +1657,13 @@ async function main() {
         return;
     }
 
+    if (TEST_GEMINI) {
+        await runTestGemini();
+        console.log('TEST_GEMINI complete. Stopping further startup.');
+        return;
+    }
+
     await generateFruitReminders();
-    if (TEST_GEMINI) await runTestGemini();
 
     // Connect to HA WebSocket to receive WhatsApp events
     connectHAWebSocket();
