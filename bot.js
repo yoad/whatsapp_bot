@@ -78,7 +78,7 @@ if (groupPairs.length === 0) {
 }
 
 
-if (!SUPERVISOR_TOKEN) {
+if (!process.env.SUPERVISOR_TOKEN) {
     console.error('WARNING: SUPERVISOR_TOKEN not available — Gemini calls via HA will not work.');
 }
 
