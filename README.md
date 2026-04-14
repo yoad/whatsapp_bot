@@ -44,11 +44,12 @@ An AI-powered Home Assistant add-on that monitors WhatsApp kindergarten parent g
 
 ## Configuration
 
+The bot no longer requires a hardcoded `GEMINI_API_KEY`. It uses the **Google Generative AI Conversation** integration configured in your Home Assistant instance.
+
 ### Required Options
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `GEMINI_API_KEY` | string | Google Gemini API key |
 | `INCOMING_GROUP_ID` | string | Source kindergarten group (WhatsApp JID) |
 | `OUTGOING_GROUP_ID` | string | Family group to send summaries to |
 
