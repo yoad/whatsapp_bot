@@ -317,17 +317,26 @@ function groupMessagesByTimeGap(messages, gapSeconds) {
 async function callGeminiViaHA(prompt) {
     if (!SUPERVISOR_TOKEN) throw new Error('SUPERVISOR_TOKEN not available — cannot call Gemini via HA');
 
-    const response = await axios.post(
-        'http://supervisor/core/api/services/google_generative_ai_conversation/generate_content?return_response',
-        { prompt },
-        {
-            headers: {
-                'Authorization': `Bearer ${SUPERVISOR_TOKEN}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: 120000
+    let response;
+    try {
+        response = await axios.post(
+            'http://supervisor/core/api/services/google_generative_ai_conversation/generate_content?return_response',
+            { prompt },
+            {
+                headers: {
+                    'Authorization': `Bearer ${SUPERVISOR_TOKEN}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 120000
+            }
+        );
+    } catch (err) {
+        if (err.response) {
+            console.error(`Gemini HA service returned HTTP ${err.response.status}. Response body:`, JSON.stringify(err.response.data, null, 2));
+            console.error(`Prompt length: ${prompt.length} chars`);
         }
-    );
+        throw err;
+    }
 
     const serviceResponse = response.data?.service_response;
     if (!serviceResponse?.text) {
