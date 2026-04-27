@@ -313,15 +313,18 @@ function groupMessagesByTimeGap(messages, gapSeconds) {
     return groups;
 }
 
-// --- GEMINI via HA: call google_generative_ai_conversation.generate_content ---
+// --- GEMINI via HA: call ai_task.generate_data ---
 async function callGeminiViaHA(prompt) {
     if (!SUPERVISOR_TOKEN) throw new Error('SUPERVISOR_TOKEN not available — cannot call Gemini via HA');
 
     let response;
     try {
         response = await axios.post(
-            'http://supervisor/core/api/services/google_generative_ai_conversation/generate_content?return_response',
-            { prompt },
+            'http://supervisor/core/api/services/ai_task/generate_data?return_response',
+            {
+                task_name: 'whatsapp_bot_extract',
+                instructions: prompt
+            },
             {
                 headers: {
                     'Authorization': `Bearer ${SUPERVISOR_TOKEN}`,
@@ -332,19 +335,21 @@ async function callGeminiViaHA(prompt) {
         );
     } catch (err) {
         if (err.response) {
-            console.error(`Gemini HA service returned HTTP ${err.response.status}. Response body:`, JSON.stringify(err.response.data, null, 2));
+            console.error(`ai_task.generate_data returned HTTP ${err.response.status}. Response body:`, JSON.stringify(err.response.data, null, 2));
             console.error(`Prompt length: ${prompt.length} chars`);
         }
         throw err;
     }
 
+    // ai_task.generate_data returns { service_response: { data: "...", conversation_id: "..." } }
     const serviceResponse = response.data?.service_response;
-    if (!serviceResponse?.text) {
-        console.error('Gemini response missing text. Full response data:', JSON.stringify(response.data, null, 2));
-        throw new Error('No text in Gemini response');
+    const text = serviceResponse?.data;
+    if (!text) {
+        console.error('AI task response missing data. Full response:', JSON.stringify(response.data, null, 2));
+        throw new Error('No data in AI task response');
     }
 
-    return serviceResponse.text;
+    return text;
 }
 
 // --- GEMINI: Extract tasks with dates ---
