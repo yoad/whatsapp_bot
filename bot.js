@@ -323,6 +323,7 @@ async function callGeminiViaHA(prompt) {
             'http://supervisor/core/api/services/ai_task/generate_data?return_response',
             {
                 task_name: 'whatsapp_bot_extract',
+                entity_id: 'ai_task.google_ai_task',
                 instructions: prompt
             },
             {
