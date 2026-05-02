@@ -217,10 +217,10 @@ Past events are automatically pruned on load.
 
 ### Fires
 
-| Event | Purpose |
-|-------|---------|
-| `whatsapp_command_send` | Send WhatsApp message |
-| `whatsapp_command_fetch` | Fetch group message history |
+| Event | `app_id` | Purpose |
+|-------|----------|---------|
+| `whatsapp_command_send` | `bot` | Send WhatsApp message |
+| `whatsapp_command_fetch` | `bot` | Fetch group message history |
 
 ## Ingress Web UI — Reminder Editor
 
@@ -283,6 +283,9 @@ whatsapp_bot/
 The process exits after **5 hours** to clear accumulated connectivity issues. HA Supervisor automatically restarts the container.
 
 ## Changelog
+
+### v0.0.45
+- Added `app_id: 'bot'` to all command events for round-robin scheduling in `whatsapp_client` v0.1.0
 
 ### v0.0.44
 - Heartbeat-aware catch-up (ignores periodic heartbeats from WhatsApp Client)

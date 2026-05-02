@@ -138,6 +138,7 @@ async function sendWhatsAppMessage(chatId, text, timeoutMs = 30000) {
         pendingFetchRequests.set(requestId, { resolve, reject, timer });
 
         fireHAEvent('whatsapp_command_send', {
+            app_id: 'bot',
             request_id: requestId,
             target_id: chatId,
             message: text
@@ -164,6 +165,7 @@ async function fetchMessagesViaHA(groupId, limit = 50, timeoutMs = 30000) {
         pendingFetchRequests.set(requestId, { resolve, reject, timer });
 
         fireHAEvent('whatsapp_command_fetch', {
+            app_id: 'bot',
             request_id: requestId,
             group_id: groupId,
             limit: limit
