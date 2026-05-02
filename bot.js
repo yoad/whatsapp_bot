@@ -1561,7 +1561,7 @@ async function catchUpMissedMessages(force = false) {
                 }
 
                 console.log(`[${gp.label}] Requesting messages from whatsapp_client...`);
-                const fetchResult = await fetchMessagesViaHA(gp.incomingId, 50);
+                const fetchResult = await fetchMessagesViaHA(gp.incomingId, 50, 60000);
                 if (!fetchResult || !fetchResult.data) {
                     console.log(`[${gp.label}] No response from fetch command.`);
                     continue;
