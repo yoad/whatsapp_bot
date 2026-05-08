@@ -153,7 +153,7 @@ async function sendWhatsAppMessage(chatId, text, timeoutMs = 30000) {
 // Pending fetch requests (for correlating whatsapp_response events)
 const pendingFetchRequests = new Map(); // requestId -> { resolve, reject, timer }
 
-async function fetchMessagesViaHA(groupId, limit = 50, timeoutMs = 30000) {
+async function fetchMessagesViaHA(groupId, limit = 10, timeoutMs = 30000) {
     const requestId = `fetch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     return new Promise((resolve, reject) => {
@@ -1561,7 +1561,7 @@ async function catchUpMissedMessages(force = false) {
                 }
 
                 console.log(`[${gp.label}] Requesting messages from whatsapp_client...`);
-                const fetchResult = await fetchMessagesViaHA(gp.incomingId, 50, 60000);
+                const fetchResult = await fetchMessagesViaHA(gp.incomingId, 10, 60000);
                 if (!fetchResult || !fetchResult.data) {
                     console.log(`[${gp.label}] No response from fetch command.`);
                     continue;
