@@ -72,6 +72,7 @@ The bot supports monitoring **2 kindergarten groups** simultaneously:
 | `SEND_REMINDERS` | bool | `true` | Enable reminder scheduling |
 | `SEND_SUMMARY_OLD_MESSAGES` | bool | `true` | Send summaries for catch-up messages |
 | `ADD_FRUITS_REMINDER_FLAMENGO` | bool | `true` | Auto-generate fruit day reminders |
+| `ADD_LIBRARY_REMINDER_HOVA` | bool | `true` | Auto-generate library day reminders |
 | `SAFE_MODE` | bool | `false` | Only start web UI, disable processing |
 | `TEST_GEMINI` | bool | `false` | Run test extraction on startup |
 | `RESET_LAST_PROCESSED` | bool | `false` | Clear last-processed timestamps on startup |

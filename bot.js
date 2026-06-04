@@ -31,6 +31,7 @@ const RESET_LAST_PROCESSED = options.RESET_LAST_PROCESSED !== undefined ? option
 const SAFE_MODE = options.SAFE_MODE !== undefined ? options.SAFE_MODE : false;
 const SEND_SUMMARY_OLD_MESSAGES = options.SEND_SUMMARY_OLD_MESSAGES !== undefined ? options.SEND_SUMMARY_OLD_MESSAGES : false;
 const ADD_FRUITS_REMINDER_FLAMENGO = options.ADD_FRUITS_REMINDER_FLAMENGO !== undefined ? options.ADD_FRUITS_REMINDER_FLAMENGO : true;
+const ADD_LIBRARY_REMINDER_HOVA = options.ADD_LIBRARY_REMINDER_HOVA !== undefined ? options.ADD_LIBRARY_REMINDER_HOVA : true;
 const REMINDER_MORNING_TIME = options.REMINDER_MORNING_TIME || '08:00';
 const REMINDER_EVENING_TIME = options.REMINDER_EVENING_TIME || '20:00';
 
@@ -755,8 +756,27 @@ function saveFruitsSchedule() {
     fs.writeFileSync(FRUITS_SCHEDULE_FILE, JSON.stringify(fruitsSchedule, null, 2), 'utf8');
 }
 
-// --- AUTOMATIC FRUIT REMINDERS ---
+// --- PERSISTENCE: library schedule tracking ---
+const LIBRARY_SCHEDULE_FILE = '/data/library_schedule.json';
+let librarySchedule = { last_scheduled_date: null };
+
+function loadLibrarySchedule() {
+    try {
+        librarySchedule = JSON.parse(fs.readFileSync(LIBRARY_SCHEDULE_FILE, 'utf8'));
+        console.log('Loaded library schedule:', JSON.stringify(librarySchedule));
+    } catch {
+        librarySchedule = { last_scheduled_date: null };
+        console.log('No previous library_schedule.json found.');
+    }
+}
+
+function saveLibrarySchedule() {
+    fs.writeFileSync(LIBRARY_SCHEDULE_FILE, JSON.stringify(librarySchedule, null, 2), 'utf8');
+}
+
+// --- AUTOMATIC FRUIT/LIBRARY REMINDERS ---
 const FLAMENGO_OUTGOING_ID = '120363424238663971@g.us';
+const HOVA_OUTGOING_ID = '120363425692029127@g.us';
 
 async function generateFruitReminders() {
     if (!ADD_FRUITS_REMINDER_FLAMENGO) {
@@ -887,8 +907,126 @@ async function generateFruitReminders() {
     console.log('');
 }
 
+async function generateLibraryReminders() {
+    if (!ADD_LIBRARY_REMINDER_HOVA) {
+        console.log('[Library] ADD_LIBRARY_REMINDER_HOVA is OFF, skipping.');
+        return;
+    }
+
+    console.log('');
+    console.log('=== LIBRARY REMINDERS: Generating for next 2 weeks ===');
+    const now = israelNow();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const twoWeeksOut = new Date(today);
+    twoWeeksOut.setDate(twoWeeksOut.getDate() + 14);
+    console.log(`[Library] Today: ${today.toISOString().split('T')[0]} | Window: until ${twoWeeksOut.toISOString().split('T')[0]}`);
+    console.log(`[Library] Last scheduled date: ${librarySchedule.last_scheduled_date || 'none (first run)'}`);
+
+    const lastScheduled = librarySchedule.last_scheduled_date
+        ? new Date(librarySchedule.last_scheduled_date)
+        : null;
+
+    let maxScheduledDate = lastScheduled ? new Date(lastScheduled) : null;
+    let addedCount = 0;
+
+    for (let d = new Date(today); d <= twoWeeksOut; d.setDate(d.getDate() + 1)) {
+        const dayOfWeek = d.getDay(); // 0=Sunday
+        if (dayOfWeek !== 0) continue;
+
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const dateForCompare = new Date(d);
+
+        if (lastScheduled && dateForCompare <= lastScheduled) {
+            console.log(`[Library] ${dateStr} (Sunday) - already covered, skipping.`);
+            continue;
+        }
+
+        const nowMs = Date.now();
+        const libraryDesc = `להביא ספר ספרייה לגן (יום ראשון)`;
+
+        const eventId = addEvent(libraryDesc, dateStr, null, HOVA_OUTGOING_ID);
+
+        const eveningDate = new Date(d);
+        eveningDate.setDate(eveningDate.getDate() - 1);
+        const eveningMs = getIsraelTimestampMs(eveningDate.getFullYear(), eveningDate.getMonth(), eveningDate.getDate(), 20, 0);
+
+        if (eveningMs > nowMs) {
+            addReminder(
+                `📚 תזכורת: להביא ספר ספרייה לגן מחר (יום ראשון)`,
+                eveningMs,
+                'evening',
+                0,
+                HOVA_OUTGOING_ID,
+                eventId
+            );
+            addedCount++;
+            const eveningStr = new Date(eveningMs).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
+            console.log(`[Library] Added evening reminder for ${dateStr} -> ${eveningStr}`);
+        }
+
+        const morningMs = getIsraelTimestampMs(d.getFullYear(), d.getMonth(), d.getDate(), 6, 45);
+
+        if (morningMs > nowMs) {
+            addReminder(
+                `📚 תזכורת: להביא ספר ספרייה לגן היום (יום ראשון)`,
+                morningMs,
+                'morning',
+                0,
+                HOVA_OUTGOING_ID,
+                eventId
+            );
+            addedCount++;
+            const morningStr = new Date(morningMs).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
+            console.log(`[Library] Added morning reminder for ${dateStr} -> ${morningStr}`);
+        }
+
+        const hovaGroup = groupPairs.find(gp => gp.outgoingId === HOVA_OUTGOING_ID);
+        if (hovaGroup && hovaGroup.calendarId) {
+            try {
+                const nextDay = new Date(d);
+                nextDay.setDate(nextDay.getDate() + 1);
+                const endDateStr = `${nextDay.getFullYear()}-${String(nextDay.getMonth() + 1).padStart(2, '0')}-${String(nextDay.getDate()).padStart(2, '0')}`;
+                const calSummary = `${hovaGroup.label}: 📚 ${libraryDesc}`;
+                await createCalendarEvent({
+                    summary: calSummary,
+                    start_date: dateStr,
+                    end_date: endDateStr,
+                    entity_id: hovaGroup.calendarId
+                });
+                console.log(`[Library] 📅 Calendar event created for ${dateStr}`);
+
+                try {
+                    const calEvents = await getCalendarEvents(hovaGroup.calendarId, dateStr, dateStr);
+                    const match = calEvents.find(ce => ce.summary === calSummary);
+                    if (match && match.uid) {
+                        updateEventCalendarInfo(eventId, match.uid, hovaGroup.calendarId);
+                    }
+                } catch (lookupErr) {
+                    console.error(`[Library] UID lookup failed: ${lookupErr.message}`);
+                }
+            } catch (calErr) {
+                console.error(`[Library] ❌ Calendar event failed for ${dateStr}: ${calErr.message}`);
+            }
+        }
+
+        if (!maxScheduledDate || dateForCompare > maxScheduledDate) {
+            maxScheduledDate = new Date(dateForCompare);
+        }
+    }
+
+    if (maxScheduledDate) {
+        librarySchedule.last_scheduled_date = `${maxScheduledDate.getFullYear()}-${String(maxScheduledDate.getMonth() + 1).padStart(2, '0')}-${String(maxScheduledDate.getDate()).padStart(2, '0')}`;
+        saveLibrarySchedule();
+    }
+
+    console.log(`[Library] Done. Added ${addedCount} new library reminders. Last scheduled date: ${librarySchedule.last_scheduled_date}`);
+    console.log('=== LIBRARY REMINDERS COMPLETE ===');
+    console.log('');
+}
+
 if (!SAFE_MODE) {
     loadFruitsSchedule();
+    loadLibrarySchedule();
 
     // --- Precise reminder scheduling (setTimeout-based) ---
     let nextReminderTimer = null;
@@ -1008,10 +1146,11 @@ if (!SAFE_MODE) {
     // Kick off: schedule (or immediately send) the next pending reminder
     rescheduleNextReminder();
 
-    // Generate fruit reminders every 6 hours
+    // Generate fruit and library reminders every 6 hours
     setInterval(async () => {
-        console.log('[Fruits] Periodic check (every 6 hours)...');
+        console.log('[Fruits/Library] Periodic check (every 6 hours)...');
         await generateFruitReminders();
+        await generateLibraryReminders();
     }, 6 * 60 * 60 * 1000);
 
     // Heartbeat: log status every 2 minutes
@@ -1680,6 +1819,7 @@ async function main() {
     }
 
     await generateFruitReminders();
+    await generateLibraryReminders();
 
     // Connect to HA WebSocket to receive WhatsApp events
     connectHAWebSocket();
@@ -1694,6 +1834,7 @@ async function main() {
     console.log(`  Extract tasks: ${EXTRACT_TASKS}`);
     console.log(`  Send reminders: ${SEND_REMINDERS}`);
     console.log(`  Fruits reminders (Flamengo): ${ADD_FRUITS_REMINDER_FLAMENGO}`);
+    console.log(`  Library reminders (Hova): ${ADD_LIBRARY_REMINDER_HOVA}`);
     console.log(`  Pending reminders: ${scheduledReminders.length}`);
     console.log('  Listening for whatsapp_message events via HA WebSocket...');
 
