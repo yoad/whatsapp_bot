@@ -359,34 +359,54 @@ function groupMessagesByTimeGap(messages, gapSeconds) {
 
 // --- GEMINI via HA: call ai_task.generate_data ---
 let _geminiResponseLoggedOnce = false;
+const GEMINI_MAX_RETRIES = 3;
+const GEMINI_RETRY_DELAY_MS = 10000; // 10s between retries
 
 async function callGeminiViaHA(prompt) {
     if (!SUPERVISOR_TOKEN) throw new Error('SUPERVISOR_TOKEN not available — cannot call Gemini via HA');
 
     let response;
-    try {
-        response = await axios.post(
-            'http://supervisor/core/api/services/ai_task/generate_data?return_response',
-            {
-                task_name: 'whatsapp_bot_extract',
-                entity_id: 'ai_task.google_ai_task',
-                instructions: prompt
-            },
-            {
-                headers: {
-                    'Authorization': `Bearer ${SUPERVISOR_TOKEN}`,
-                    'Content-Type': 'application/json'
+    let lastErr;
+
+    for (let attempt = 1; attempt <= GEMINI_MAX_RETRIES; attempt++) {
+        try {
+            response = await axios.post(
+                'http://supervisor/core/api/services/ai_task/generate_data?return_response',
+                {
+                    task_name: 'whatsapp_bot_extract',
+                    entity_id: 'ai_task.google_ai_task',
+                    instructions: prompt
                 },
-                timeout: 120000
+                {
+                    headers: {
+                        'Authorization': `Bearer ${SUPERVISOR_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 120000
+                }
+            );
+            break; // success — exit retry loop
+        } catch (err) {
+            lastErr = err;
+            const status = err.response?.status;
+            if (err.response) {
+                console.error(`[Gemini] Attempt ${attempt}/${GEMINI_MAX_RETRIES}: HTTP ${status}. Body: ${JSON.stringify(err.response.data, null, 2)}`);
+                console.error(`[Gemini] Prompt length: ${prompt.length} chars`);
+            } else {
+                console.error(`[Gemini] Attempt ${attempt}/${GEMINI_MAX_RETRIES}: ${err.message}`);
             }
-        );
-    } catch (err) {
-        if (err.response) {
-            console.error(`ai_task.generate_data returned HTTP ${err.response.status}. Response body:`, JSON.stringify(err.response.data, null, 2));
-            console.error(`Prompt length: ${prompt.length} chars`);
+
+            // Only retry on transient server errors (5xx)
+            if (status && status >= 500 && attempt < GEMINI_MAX_RETRIES) {
+                console.log(`[Gemini] Retrying in ${GEMINI_RETRY_DELAY_MS / 1000}s...`);
+                await delay(GEMINI_RETRY_DELAY_MS);
+                continue;
+            }
+            throw err;
         }
-        throw err;
     }
+
+    if (!response) throw lastErr || new Error('Gemini call failed');
 
     // Log the raw response structure once (for debugging response format)
     if (!_geminiResponseLoggedOnce) {
