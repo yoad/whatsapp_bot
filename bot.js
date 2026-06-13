@@ -358,6 +358,8 @@ function groupMessagesByTimeGap(messages, gapSeconds) {
 }
 
 // --- GEMINI via HA: call ai_task.generate_data ---
+let _geminiResponseLoggedOnce = false;
+
 async function callGeminiViaHA(prompt) {
     if (!SUPERVISOR_TOKEN) throw new Error('SUPERVISOR_TOKEN not available — cannot call Gemini via HA');
 
@@ -386,9 +388,28 @@ async function callGeminiViaHA(prompt) {
         throw err;
     }
 
-    // ai_task.generate_data returns { service_response: { data: "...", conversation_id: "..." } }
+    // Log the raw response structure once (for debugging response format)
+    if (!_geminiResponseLoggedOnce) {
+        const keys = response.data ? Object.keys(response.data) : [];
+        const srKeys = response.data?.service_response ? Object.keys(response.data.service_response) : [];
+        console.log(`[Gemini] Response structure: top-level keys=${JSON.stringify(keys)}, service_response keys=${JSON.stringify(srKeys)}`);
+        _geminiResponseLoggedOnce = true;
+    }
+
+    // Parse response — handle both formats:
+    // 1. Direct: { service_response: { data: "...", conversation_id: "..." } }
+    // 2. Entity-keyed: { service_response: { "ai_task.google_ai_task": { data: "...", ... } } }
     const serviceResponse = response.data?.service_response;
-    const text = serviceResponse?.data;
+    let text = serviceResponse?.data;
+
+    // If 'data' not at top level of service_response, check entity-keyed format
+    if (!text && serviceResponse) {
+        const entityData = serviceResponse['ai_task.google_ai_task'];
+        if (entityData?.data) {
+            text = entityData.data;
+        }
+    }
+
     if (!text) {
         console.error('AI task response missing data. Full response:', JSON.stringify(response.data, null, 2));
         throw new Error('No data in AI task response');
