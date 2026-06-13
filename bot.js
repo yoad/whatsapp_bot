@@ -2,6 +2,7 @@
 // Event-driven kindergarten task extractor — via whatsapp_client addon
 const axios = require('axios');
 const WebSocket = require('ws');
+const crypto = require('crypto');
 const fs = require('fs');
 const { startEditor } = require('./reminder_editor');
 
@@ -126,7 +127,7 @@ async function fireHAEvent(eventType, eventData) {
     }
 }
 
-async function sendWhatsAppMessage(chatId, text, timeoutMs = 30000) {
+async function sendWhatsAppMessage(chatId, text, timeoutMs = 60000) {
     const requestId = `send-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     console.log(`[Send] Firing whatsapp_command_send to ${chatId} (${text.substring(0, 60)}...)`);
 
@@ -149,6 +150,46 @@ async function sendWhatsAppMessage(chatId, text, timeoutMs = 30000) {
             reject(err);
         });
     });
+}
+
+// Short hash of a message body for delivery verification.
+// Normalizes whitespace so minor formatting differences don't break matching.
+function msgHash(text) {
+    const normalized = (text || '').replace(/\s+/g, ' ').trim();
+    return crypto.createHash('sha256').update(normalized).digest('hex').substring(0, 16);
+}
+
+// Verify whether a message was actually delivered by fetching recent messages
+// from the target group and comparing hashes. Used after send timeouts to
+// avoid duplicate retries when the client sent successfully but the response
+// event arrived too late.
+async function verifyMessageDelivered(targetGroupId, fullMessageBody, maxAgeMs = 3 * 60 * 1000) {
+    try {
+        const expectedHash = msgHash(fullMessageBody);
+        console.log(`[Verify] Checking delivery in ${targetGroupId} (hash: ${expectedHash})...`);
+
+        const result = await fetchMessagesViaHA(targetGroupId, 10, 30000);
+        const messages = result.data || [];
+        const now = Math.floor(Date.now() / 1000);
+        const maxAgeSec = Math.floor(maxAgeMs / 1000);
+
+        const found = messages.find(m =>
+            m.from_me &&
+            m.body &&
+            (now - m.timestamp) < maxAgeSec &&
+            msgHash(m.body) === expectedHash
+        );
+
+        if (found) {
+            console.log(`[Verify] ✅ Hash match found (sent ${now - found.timestamp}s ago). Already delivered.`);
+            return true;
+        }
+        console.log(`[Verify] ❌ No matching hash in recent ${messages.length} messages.`);
+        return false;
+    } catch (err) {
+        console.error(`[Verify] Failed to verify delivery: ${err.message}`);
+        return false; // assume not delivered if we can't check
+    }
 }
 
 // Pending fetch requests (for correlating whatsapp_response events)
@@ -1126,7 +1167,59 @@ if (!SAFE_MODE) {
                         reminderType: type
                     });
                 } catch (err) {
-                    console.error(`Failed to send ${reminders.length} reminder(s) (will retry in 1 min): ${err.message}`);
+                    console.error(`Failed to send ${reminders.length} reminder(s): ${err.message}`);
+
+                    // Before retrying, check if the message was actually delivered
+                    const alreadyDelivered = await verifyMessageDelivered(targetGroupId, message);
+                    if (alreadyDelivered) {
+                        console.log(`[Reminders] Message was already delivered despite timeout — marking as sent.`);
+                        reminders.forEach(r => { r.sent = true; });
+                        changed = true;
+
+                        const groupLabel = GROUP_NAMES[targetGroupId] || INCOMING_GROUP_NAMES[targetGroupId] || targetGroupId;
+                        addActivityLogEntry({
+                            timestamp: Math.floor(Date.now() / 1000),
+                            group: targetGroupId,
+                            groupLabel: groupLabel,
+                            type: 'reminder_sent',
+                            messageCount: reminders.length,
+                            messagePreview: taskLines.substring(0, 200),
+                            senders: ['🤖 בוט'],
+                            outcome: ['reminder_sent'],
+                            outcomeDetails: [`${emoji} ${typeText}: ${reminders.length} משימות (verified after timeout)`],
+                            reminderType: type
+                        });
+                        continue; // move on to next group of reminders
+                    }
+
+                    // Track retry count per reminder to prevent infinite loops
+                    const MAX_SEND_RETRIES = 5;
+                    const allExhausted = reminders.every(r => (r._retryCount || 0) >= MAX_SEND_RETRIES);
+                    if (allExhausted) {
+                        console.error(`[Reminders] Max retries (${MAX_SEND_RETRIES}) exhausted for ${reminders.length} reminder(s) — giving up.`);
+                        reminders.forEach(r => { r.sent = true; }); // mark sent to stop retrying
+                        changed = true;
+
+                        const groupLabel = GROUP_NAMES[targetGroupId] || INCOMING_GROUP_NAMES[targetGroupId] || targetGroupId;
+                        addActivityLogEntry({
+                            timestamp: Math.floor(Date.now() / 1000),
+                            group: targetGroupId,
+                            groupLabel: groupLabel,
+                            type: 'reminder_failed',
+                            messageCount: reminders.length,
+                            messagePreview: taskLines.substring(0, 200),
+                            senders: ['🤖 בוט'],
+                            outcome: ['reminder_failed'],
+                            outcomeDetails: [`❌ ${typeText}: נכשל אחרי ${MAX_SEND_RETRIES} ניסיונות`],
+                            reminderType: type
+                        });
+                        continue; // move on to next group of reminders
+                    }
+
+                    // Increment retry count and schedule retry
+                    reminders.forEach(r => { r._retryCount = (r._retryCount || 0) + 1; });
+                    const retryNum = reminders[0]._retryCount;
+                    console.log(`[Reminders] Will retry in 1 min (attempt ${retryNum}/${MAX_SEND_RETRIES})`);
                     setTimeout(() => rescheduleNextReminder(), 60 * 1000);
                     return;
                 }
